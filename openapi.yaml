@@ -1,0 +1,138 @@
+openapi: 3.0.3
+info:
+  title: vvot27 Archive API
+  version: 1.0.0
+
+x-yc-apigateway:
+  service_account_id: "${gateway_account}"
+
+paths:
+  /tasks:
+    post:
+      operationId: createTask
+      summary: Queue a file for archiving
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Task'
+      responses:
+        '200':
+          description: Successful SendMessage response, exposed to clients as 202.
+          x-yc-status-mapping: 202
+        '202':
+          description: Task accepted for processing
+        '400':
+          description: Invalid task
+      x-yc-apigateway-validator:
+        validateRequestBody: true
+      x-yc-apigateway-integration:
+        type: cloud_ymq
+        action: SendMessage
+        queue_url: "${queue_url}"
+        folder_id: "${folder_id}"
+        payload_format_type: body
+
+  /archives:
+    get:
+      operationId: listArchives
+      summary: List completed archives
+      responses:
+        '200':
+          description: Archive records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Archive'
+      x-yc-apigateway-integration:
+        type: cloud_ydb
+        action: Scan
+        database: "${database}"
+        table_name: "${table_name}"
+
+  /archives/{key}:
+    get:
+      operationId: getArchive
+      parameters:
+        - $ref: '#/components/parameters/Key'
+      responses:
+        '200':
+          description: Archive record
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Archive'
+        '404':
+          description: Archive not found
+      x-yc-apigateway-validator:
+        validateResponseBody: true
+        validationErrorHandler:
+          statusCode: 404
+          x-yc-apigateway-integration:
+            type: dummy
+            http_code: 200
+            content:
+              application/json: '{"error":"Archive not found"}'
+      x-yc-apigateway-integration:
+        type: cloud_ydb
+        action: GetItem
+        database: "${database}"
+        table_name: "${table_name}"
+        key: '{"key":"{key}"}'
+
+  /download/{key}:
+    get:
+      operationId: downloadArchive
+      parameters:
+        - $ref: '#/components/parameters/Key'
+      responses:
+        '200':
+          description: ZIP archive
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Archive not found
+      x-yc-apigateway-integration:
+        type: object_storage
+        bucket: "${bucket}"
+        object: '{key}'
+
+components:
+  parameters:
+    Key:
+      name: key
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    Task:
+      type: object
+      required: [name, url]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          pattern: '^[^/\\:\x00-\x1f\x7f]+$'
+          not:
+            enum: ['.', '..']
+        url:
+          type: string
+          format: uri
+          pattern: '^https?://[^\s/@?#]+([/?#][^\s]*)?$'
+    Archive:
+      type: object
+      required: [name, url, key]
+      properties:
+        name:
+          type: string
+        url:
+          type: string
+        key:
+          type: string
