@@ -38,6 +38,19 @@
    terraform init
    terraform fmt -check
    terraform validate
+   ```
+
+   При первом развёртывании провайдеру таблицы нужны уже созданные ключ сервисного аккаунта и адрес Document API. Создай эти зависимости той же конфигурацией. Проверь план перед подтверждением `yes`.
+
+   ```bash
+   terraform apply \
+     -target=yandex_iam_service_account_static_access_key.provisioner \
+     -target=yandex_ydb_database_serverless.main
+   ```
+
+   После успешного завершения построй полный план по текущему state. При последующих запусках с существующими ключом и базой начинай сразу с полного плана.
+
+   ```bash
    terraform plan -out=deploy.tfplan
    terraform apply deploy.tfplan
    API="$(terraform output -raw api_url)"
